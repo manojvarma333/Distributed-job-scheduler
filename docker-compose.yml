@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scheduler}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scheduler}
+      POSTGRES_DB: ${POSTGRES_DB:-scheduler}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scheduler}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - scheduler-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-scheduler}:${POSTGRES_PASSWORD:-scheduler}@postgres:5432/${POSTGRES_DB:-scheduler}
+      HEARTBEAT_TIMEOUT_SECONDS: 15
+      RECOVERY_CHECK_INTERVAL_SECONDS: 5
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - scheduler-net
+
+  worker-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    environment:
+      WORKER_ID: worker-001
+      BACKEND_URL: http://backend:8000
+      POLL_INTERVAL: 2
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - scheduler-net
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    environment:
+      WORKER_ID: worker-002
+      BACKEND_URL: http://backend:8000
+      POLL_INTERVAL: 2
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - scheduler-net
+
+  worker-3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    environment:
+      WORKER_ID: worker-003
+      BACKEND_URL: http://backend:8000
+      POLL_INTERVAL: 2
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - scheduler-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "4173:4173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - scheduler-net
+
+networks:
+  scheduler-net:
+    driver: bridge
+
+volumes:
+  pgdata:
